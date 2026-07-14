@@ -1,0 +1,30 @@
+{
+  "song_id": "edge_structure_disabled",
+  "source_file": "synthetic_120bpm_amin.wav",
+  "duration_sec": 20.0,
+  "sample_rate": 44100,
+  "target_frame_rate": 60,
+  "loudness": {
+    "integrated_lufs": -14.0,
+    "applied_gain_db": 2.28,
+    "dynamic_range_lufs": 0.26
+  },
+  "tempo": {
+    "bpm": 120.0,
+    "beat_confidence": 0.9792,
+    "low_confidence_rhythm": false,
+    "downbeat_phase_uncertain": false
+  },
+  "beats": [0.02, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 15.5, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5, 19.0, 19.5, 20.0],
+  "downbeats": [0.02, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
+  "sections": [],
+  "key_estimate": "A minor",
+  "stems_processed": ["full_mix", "drums", "bass", "other", "vocals"],
+  "feature_columns_ref": "see accompanying .features.parquet for column list",
+  "pipeline_version": "0.1.0",
+  "model_versions": {
+    "separation": "htdemucs_v4",
+    "rhythm": "beat_this_final0",
+    "structure": null
+  }
+}

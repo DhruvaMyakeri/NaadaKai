@@ -1,0 +1,30 @@
+{
+  "song_id": "edge_bad_version",
+  "source_file": "synthetic_120bpm_amin.wav",
+  "duration_sec": 20.0,
+  "sample_rate": 44100,
+  "target_frame_rate": 60,
+  "loudness": {
+    "integrated_lufs": -14.0,
+    "applied_gain_db": 2.28,
+    "dynamic_range_lufs": 0.26
+  },
+  "tempo": {
+    "bpm": 120.0,
+    "beat_confidence": 0.9792,
+    "low_confidence_rhythm": false,
+    "downbeat_phase_uncertain": false
+  },
+  "beats": [0.02, 0.5, 1.0],
+  "downbeats": [0.02, 2.0],
+  "sections": [{ "start": 0.0, "end": 20.0, "label": "inst" }],
+  "key_estimate": "A minor",
+  "stems_processed": ["full_mix", "drums", "bass", "other", "vocals"],
+  "feature_columns_ref": "see accompanying .features.parquet for column list",
+  "pipeline_version": "9.0.0",
+  "model_versions": {
+    "separation": "htdemucs_v4",
+    "rhythm": "beat_this_final0",
+    "structure": "songformer_hf"
+  }
+}

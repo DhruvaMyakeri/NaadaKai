@@ -1,0 +1,56 @@
+# ── Secrets & local env (never commit) ──────────────────────────────
+.env
+.env.*
+!.env.example
+.env.local
+
+# ── Node / Next.js ──────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+
+# ── Build / typecheck cache ─────────────────────────────────────────
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Logs ────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ── OS & editor ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Cursor / local agent config
+.cursor/
+.claude/
+
+# ── User media (songs processed locally, not in git) ────────────────
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+uploads/
+
+# ── Extractor QA plots (optional local artifacts) ───────────────────
+*.qa.png
+
+# ── Python (if anything lands here from local tooling) ──────────────
+__pycache__/
+.venv/
+venv/
+.pytest_cache/
+
+# ── Misc ────────────────────────────────────────────────────────────
+*.pem
+.cache/
