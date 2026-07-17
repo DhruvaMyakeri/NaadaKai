@@ -9,6 +9,7 @@ import {
 } from "./config";
 import type { FeatureTable } from "./bundle";
 import type {
+  ExtractorChord,
   ExtractorMeta,
   ExtractorSection,
   LabelRegime,
@@ -345,6 +346,75 @@ function detectLabelRegime(meta: ExtractorMeta): {
   return { regime: "identity", derived: false };
 }
 
+// ── cross-song identity (ABSOLUTE, not per-song normalized) ──
+
+/** Tonic mode from the key estimate. Handles "C major"/"A minor" words,
+ *  "{root}:min|maj", and trailing-m note forms ("Am", "F#m"). */
+function deriveKeyMode(keyEstimate: string): "major" | "minor" | "unknown" {
+  const k = keyEstimate.toLowerCase().trim();
+  if (/\bminor\b|:min|(^|\s)min\b/.test(k)) return "minor";
+  if (/\bmajor\b|:maj|(^|\s)maj\b/.test(k)) return "major";
+  if (/^[a-g][#b]?m\b/.test(k)) return "minor"; // "am", "f#m"
+  if (/^[a-g][#b]?\b/.test(k)) return "major"; // bare note ⇒ major
+  return "unknown";
+}
+
+/** "A:min" → "Am", "F:maj" → "F", "G:7" → "G7". */
+function formatChord(label: string): string {
+  const [root, qual] = label.split(":");
+  if (!qual || qual === "maj") return root;
+  if (qual === "min") return `${root}m`;
+  return `${root}${qual}`;
+}
+
+/**
+ * Factual harmonic digest from the chord track (within the clip window):
+ * minor-vs-major balance by sounding duration + the most-present chords.
+ * This is cross-song-comparable — a melancholic minor-key song and an
+ * anthemic major-key song produce visibly different strings, which the
+ * per-song-normalized section metrics never could.
+ */
+function deriveHarmonicCharacter(
+  chords: ExtractorChord[] | undefined,
+  clipSeconds: number,
+): string {
+  if (!chords || chords.length === 0) return "";
+  const durByLabel = new Map<string, number>();
+  let majDur = 0;
+  let minDur = 0;
+  for (const c of chords) {
+    if (c.start >= clipSeconds) continue;
+    if (!c.chord_label || c.chord_label === "N") continue;
+    const dur = Math.max(0, Math.min(c.end, clipSeconds) - c.start);
+    if (dur <= 0) continue;
+    durByLabel.set(c.chord_label, (durByLabel.get(c.chord_label) ?? 0) + dur);
+    const qual = c.chord_label.split(":")[1] ?? "";
+    if (qual === "min") minDur += dur;
+    else if (qual === "maj") majDur += dur;
+  }
+  if (durByLabel.size === 0) return "";
+  const top = [...durByLabel.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([label]) => formatChord(label));
+  const majMin = majDur + minDur;
+  const prefix = majMin > 0 ? `${Math.round((minDur / majMin) * 100)}% minor · ` : "";
+  return `${prefix}${top.join(", ")}`;
+}
+
+/** ABSOLUTE brightness bucket from the mean spectral centroid (Hz).
+ *  Fixed thresholds (typical music centroid ~1–4 kHz) so the label is
+ *  comparable across songs, unlike the normalized per-section brightness. */
+function deriveBrightnessLabel(
+  centroid: Float64Array,
+): "dark" | "warm" | "bright" | "brilliant" {
+  const m = mean(centroid, 0, centroid.length);
+  if (m < 1200) return "dark";
+  if (m < 2200) return "warm";
+  if (m < 3200) return "bright";
+  return "brilliant";
+}
+
 // ── entry point ──
 
 /**
@@ -387,6 +457,11 @@ export function buildMusicalSummary(
     lowConfidenceRhythm: meta.tempo.low_confidence_rhythm,
     downbeatPhaseUncertain: meta.tempo.downbeat_phase_uncertain,
     keyEstimate: meta.key_estimate,
+    keyMode: deriveKeyMode(meta.key_estimate),
+    harmonicCharacter: deriveHarmonicCharacter(meta.chords, durationSec),
+    brightnessLabel: deriveBrightnessLabel(
+      features.columns.get("full_mix_spectral_centroid") ?? new Float64Array(0),
+    ),
     integratedLufs: meta.loudness.integrated_lufs, // may be null
     dynamicRangeLufs: round(meta.loudness.dynamic_range_lufs, 2),
     labelRegime: regime,

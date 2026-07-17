@@ -24,6 +24,7 @@ import type { WorldSessionKind } from "../../lib/world/worldSession";
  * the mouse can never influence world content.
  */
 
+// Cosmetic mouse-parallax (Helios/mock only). Lingbot is keyboard-only.
 const LOOK_SENSITIVITY = 0.0022;
 const MAX_YAW = 0.9;
 const MAX_PITCH = 0.6;
@@ -73,16 +74,18 @@ export function WorldStage({
   const applyVideoParallax = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    // Lingbot's <video> IS the real navigable camera (mouse-look drives
-    // actual look_* commands), so a CSS pan on top would double-move —
-    // only Helios/mock get the cosmetic parallax transform.
+    // Lingbot's <video> IS the real navigable camera (keys drive actual
+    // look_*/move_* commands), so a CSS pan on top would double-move —
+    // only Helios/mock get the cosmetic mouse-parallax transform.
     if (mode === "lingbot") return;
     const { yaw, pitch } = lookRef.current;
-    // View-only transform: the plane is oversized (scale) and panned by
-    // the camera, so looking around never runs out of pixels.
     video.style.transform = `scale(1.14) translate(${-yaw * 42}px, ${-pitch * 30}px)`;
   }, [mode]);
 
+  // Mouse-parallax (Helios/mock only, under pointer lock). The mouse is
+  // deliberately NOT wired to the Lingbot world camera — pointer lock
+  // emits phantom deltas that made it drift/rotate on its own. Lingbot is
+  // keyboard-only (see below).
   useEffect(() => {
     const onLockChange = () =>
       setPointerLocked(document.pointerLockElement === stageRef.current);
@@ -98,16 +101,6 @@ export function WorldStage({
         Math.min(MAX_PITCH, look.pitch + e.movementY * LOOK_SENSITIVITY),
       );
       applyVideoParallax();
-      // Lingbot: translate the mouse delta into a real look direction that
-      // overrides the audio choreography for a short window (deadzone
-      // avoids jitter). up/down uses screen-y (down = look down).
-      if (mode === "lingbot" && cameraInputRef.current) {
-        const dz = 1.5;
-        const ci = cameraInputRef.current;
-        ci.lookH = e.movementX > dz ? 1 : e.movementX < -dz ? -1 : 0;
-        ci.lookV = e.movementY > dz ? -1 : e.movementY < -dz ? 1 : 0;
-        ci.lookActiveUntil = Date.now() + 220;
-      }
     };
     document.addEventListener("pointerlockchange", onLockChange);
     document.addEventListener("mousemove", onMouseMove);
@@ -115,11 +108,17 @@ export function WorldStage({
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("mousemove", onMouseMove);
     };
-  }, [applyVideoParallax, mode, cameraInputRef]);
+  }, [applyVideoParallax]);
 
-  // WASD walk (Lingbot only) — feeds the movement override while held.
+  // Camera controls (Lingbot only) — KEYBOARD ONLY.
+  //   Arrow keys  → turn the first-person camera (look_*)
+  //   W A S D     → walk it forward/back/strafe (move_*)
+  // Held = act, released = stop, so the camera can NEVER move on its own.
+  // A window blur (or unmount) zeroes everything, so a key held while
+  // focus is lost can't leave the camera stuck turning.
   useEffect(() => {
     if (mode !== "lingbot") return;
+    const HANDLED = /^(Key[WASD]|Arrow(Left|Right|Up|Down))$/;
     const apply = (code: string, down: boolean) => {
       const ci = cameraInputRef.current;
       if (!ci) return;
@@ -128,15 +127,39 @@ export function WorldStage({
         case "KeyS": ci.moveLon = down ? -1 : 0; break;
         case "KeyD": ci.moveLat = down ? 1 : 0; break;
         case "KeyA": ci.moveLat = down ? -1 : 0; break;
+        case "ArrowLeft": ci.lookH = down ? -1 : 0; break;
+        case "ArrowRight": ci.lookH = down ? 1 : 0; break;
+        case "ArrowUp": ci.lookV = down ? 1 : 0; break;
+        case "ArrowDown": ci.lookV = down ? -1 : 0; break;
       }
     };
-    const onKeyDown = (e: KeyboardEvent) => apply(e.code, true);
-    const onKeyUp = (e: KeyboardEvent) => apply(e.code, false);
+    const resetAll = () => {
+      const ci = cameraInputRef.current;
+      if (ci) {
+        ci.lookH = 0;
+        ci.lookV = 0;
+        ci.moveLon = 0;
+        ci.moveLat = 0;
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!HANDLED.test(e.code)) return;
+      e.preventDefault(); // arrows would otherwise scroll the page
+      apply(e.code, true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!HANDLED.test(e.code)) return;
+      e.preventDefault();
+      apply(e.code, false);
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", resetAll);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", resetAll);
+      resetAll();
     };
   }, [mode, cameraInputRef]);
 
@@ -146,7 +169,11 @@ export function WorldStage({
     <div
       ref={stageRef}
       onClick={() => {
-        if (playing && !pointerLocked) stageRef.current?.requestPointerLock();
+        // Pointer-lock mouse-look is for the mouse-driven engines only.
+        // Lingbot is keyboard-only, so a click does nothing there.
+        if (mode !== "lingbot" && playing && !pointerLocked) {
+          stageRef.current?.requestPointerLock();
+        }
       }}
       className="relative h-full w-full cursor-pointer overflow-hidden bg-black"
     >
@@ -180,7 +207,14 @@ export function WorldStage({
           {formatCountdown(remainingSeconds)}
         </div>
       )}
-      {playing && !pointerLocked && (
+      {playing && mode === "lingbot" && (
+        <div className="absolute inset-x-0 bottom-6 flex justify-center">
+          <span className={`px-4 py-1.5 text-sm text-zinc-200 ${GLASS_CHIP}`}>
+            ← → ↑ ↓ look · W A S D move
+          </span>
+        </div>
+      )}
+      {playing && mode !== "lingbot" && !pointerLocked && (
         <div className="absolute inset-x-0 bottom-6 flex justify-center">
           <span className={`px-4 py-1.5 text-sm text-zinc-200 ${GLASS_CHIP}`}>
             click to look around · esc to release

@@ -60,8 +60,12 @@ import {
   IMAGE_STRENGTH,
   IMAGE_STRENGTH_MORPH,
   NO_CHARACTER_SUFFIX,
+  STATIC_CAMERA_SUFFIX,
   SEED_JPEG_QUALITY,
   SEED_MAX_DIMENSION,
+  USER_LOOK_PITCH_DEG,
+  USER_LOOK_YAW_DEG,
+  USER_MOVE_STEP,
   WORLD_MODEL,
 } from "./config";
 
@@ -146,15 +150,12 @@ const MIN_SEND_INTERVAL_MS = 500;
 const IMAGE_ACK_TIMEOUT_MS = 12_000;
 const PROMPT_ACK_TIMEOUT_MS = 5_000;
 
-/** Floor between camera-command batches. Movement/look apply per chunk,
- *  so sub-chunk spam is wasted; this also caps data-channel traffic. */
-const CAMERA_MIN_INTERVAL_MS = 200;
-
-// CameraIntent axis (-1|0|1) → Lingbot setter enum, indexed by axis+1.
-const LON_CMD = ["back", "idle", "forward"] as const;
-const LAT_CMD = ["strafe_left", "idle", "strafe_right"] as const;
-const LOOK_H_CMD = ["left", "idle", "right"] as const;
-const LOOK_V_CMD = ["down", "idle", "up"] as const;
+// Per-chunk camera-pose step sizes (radians / translation units), applied
+// while a key is held. See config for the degree values + rationale.
+const DEG2RAD = Math.PI / 180;
+const POSE_YAW_RAD = USER_LOOK_YAW_DEG * DEG2RAD;
+const POSE_PITCH_RAD = USER_LOOK_PITCH_DEG * DEG2RAD;
+const POSE_MOVE = USER_MOVE_STEP;
 
 type ModelMessage = Record<string, unknown> & { type?: string };
 
@@ -516,10 +517,10 @@ class LingbotWorldSession implements WorldSession {
   /** seedId → uploaded FileRef (reusable across set_image calls). */
   private seedRefs = new Map<string, FileRef>();
   private currentSeedId: string | null = null;
-  /** Last camera intent actually sent, for diffing (only changed axes go
-   *  on the wire — movement applies per chunk, so flooding is pointless). */
-  private lastCam: CameraIntent | null = null;
-  private lastCamSendAt = 0;
+  /** Last [rx,ry,rz,tx,ty,tz] camera pose actually sent, for diffing — the
+   *  pose persists per chunk, so we only resend when it changes. Reset to
+   *  null after a cut (new run) to force a fresh pose push. */
+  private lastPose: number[] | null = null;
   /** Base scene prompt currently driving generation (set by applyScene),
    *  restored after a beat pulse temporarily intensifies it. */
   private basePrompt = "";
@@ -693,7 +694,9 @@ class LingbotWorldSession implements WorldSession {
    */
   private setScenePrompt(rawPrompt: string): Promise<void> {
     this.basePrompt = rawPrompt;
-    return this.model.setPrompt({ prompt: rawPrompt + NO_CHARACTER_SUFFIX });
+    return this.model.setPrompt({
+      prompt: rawPrompt + NO_CHARACTER_SUFFIX + STATIC_CAMERA_SUFFIX,
+    });
   }
 
   async applyScene({ seedId, prompt }: WorldScene): Promise<void> {
@@ -741,7 +744,7 @@ class LingbotWorldSession implements WorldSession {
             (m.type === "command_error" && m.command === "start"),
           PROMPT_ACK_TIMEOUT_MS,
         );
-        this.lastCam = null; // force a fresh camera push into the new run
+        this.lastPose = null; // force a fresh pose push into the new run
       }
       for (const cb of this.seamCbs) cb(false);
     } else {
@@ -812,9 +815,16 @@ class LingbotWorldSession implements WorldSession {
 
     // Bypasses setScenePrompt (must not overwrite this.basePrompt — the
     // pulse is a transient overlay on it) but still carries the strict
-    // no-character clause on the wire, same as every other prompt.
+    // no-character AND static-camera clauses on the wire, same as every
+    // other prompt (the surge is scene energy, never a camera move).
     this.model
-      .setPrompt({ prompt: this.basePrompt + BEAT_PULSE_SUFFIX + NO_CHARACTER_SUFFIX })
+      .setPrompt({
+        prompt:
+          this.basePrompt +
+          BEAT_PULSE_SUFFIX +
+          NO_CHARACTER_SUFFIX +
+          STATIC_CAMERA_SUFFIX,
+      })
       .catch((e) => console.warn("[lingbot] pulse failed", e));
     if (this.pulseRevertTimer) clearTimeout(this.pulseRevertTimer);
     this.pulseRevertTimer = setTimeout(() => {
@@ -822,7 +832,9 @@ class LingbotWorldSession implements WorldSession {
       // Revert to whatever the current base is (a scene change may have
       // updated it in the meantime).
       this.model
-        .setPrompt({ prompt: this.basePrompt + NO_CHARACTER_SUFFIX })
+        .setPrompt({
+          prompt: this.basePrompt + NO_CHARACTER_SUFFIX + STATIC_CAMERA_SUFFIX,
+        })
         .catch(() => {});
     }, BEAT_PULSE_HOLD_MS);
   }
@@ -835,32 +847,32 @@ class LingbotWorldSession implements WorldSession {
    */
   driveCamera(intent: CameraIntent): void {
     if (!this.started || this.closed) return;
-    const now = Date.now();
-    if (now - this.lastCamSendAt < CAMERA_MIN_INTERVAL_MS) return;
 
-    const prev = this.lastCam;
-    const rot = Math.round(intent.rotationSpeed / 2) * 2; // bucket to 2°
-    const sends: Promise<unknown>[] = [];
-    if (!prev || prev.lon !== intent.lon) {
-      sends.push(this.model.setMoveLongitudinal({ move_longitudinal: LON_CMD[intent.lon + 1] }));
-    }
-    if (!prev || prev.lat !== intent.lat) {
-      sends.push(this.model.setMoveLateral({ move_lateral: LAT_CMD[intent.lat + 1] }));
-    }
-    if (!prev || prev.lookH !== intent.lookH) {
-      sends.push(this.model.setLookHorizontal({ look_horizontal: LOOK_H_CMD[intent.lookH + 1] }));
-    }
-    if (!prev || prev.lookV !== intent.lookV) {
-      sends.push(this.model.setLookVertical({ look_vertical: LOOK_V_CMD[intent.lookV + 1] }));
-    }
-    if (!prev || Math.round(prev.rotationSpeed / 2) * 2 !== rot) {
-      sends.push(this.model.setRotationSpeedDeg({ rotation_speed_deg: rot }));
-    }
-    if (sends.length === 0) return;
+    // Explicit per-chunk camera pose [rx, ry, rz, tx, ty, tz]. Rotation is
+    // RELATIVE to the current orientation, so an ALL-ZERO pose holds the
+    // camera perfectly still and OVERRIDES the model's own look-drift — this
+    // is what makes autonomous rotation impossible. A held key applies a
+    // fixed rotation/translation each chunk (a turn / a walk); releasing
+    // returns to all-zero = frozen. The pose persists across chunks, so we
+    // only resend when it changes.
+    //
+    // Sign convention (flip a term here if a direction comes out inverted):
+    //   ry (yaw)   +ve = look RIGHT   ← lookH = +1 (ArrowRight)
+    //   rx (pitch) +ve = look UP      ← lookV = +1 (ArrowUp)
+    //   tz         +ve = move FORWARD ← lon   = +1 (W)
+    //   tx         +ve = strafe RIGHT ← lat   = +1 (D)
+    const rx = intent.lookV * POSE_PITCH_RAD;
+    const ry = intent.lookH * POSE_YAW_RAD;
+    const tx = intent.lat * POSE_MOVE;
+    const tz = intent.lon * POSE_MOVE;
+    const pose = [rx, ry, 0, tx, 0, tz];
 
-    this.lastCamSendAt = now;
-    this.lastCam = { ...intent, rotationSpeed: rot };
-    Promise.all(sends).catch((e) => console.warn("[lingbot] camera command failed", e));
+    const prev = this.lastPose;
+    if (prev && prev.every((v, i) => v === pose[i])) return; // unchanged
+    this.lastPose = pose;
+    void this.model
+      .setCameraPose({ camera_pose: pose })
+      .catch((e) => console.warn("[lingbot] camera pose failed", e));
   }
 
   async close(): Promise<void> {

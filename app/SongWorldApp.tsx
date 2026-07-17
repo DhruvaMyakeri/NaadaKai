@@ -270,7 +270,7 @@ export function SongWorldApp({
         // world on the bar (session.pulse); per-beat visual punch is the
         // effects overlay. driveCamera/pulse are no-ops off Lingbot.
         if (session.kind === "lingbot") {
-          session.driveCamera(resolveUserCamera(cameraInputRef.current, Date.now()));
+          session.driveCamera(resolveUserCamera(cameraInputRef.current));
           const bc = beatClockRef.current;
           if (bc) {
             const { downbeats } = bc.consume(t);
@@ -337,7 +337,7 @@ export function SongWorldApp({
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-6 py-16">
           <header className="text-center">
             <h1 className="text-4xl font-semibold tracking-tight text-zinc-50 sm:text-5xl">
-              Song <span className="text-brand">Worlds</span>
+              Naada<span className="text-brand">Kai</span>
             </h1>
             <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">
               Pick a song. We compose a generative world from it and let you

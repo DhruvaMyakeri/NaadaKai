@@ -3,7 +3,7 @@ import "@reactor-team/ui/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Song Worlds",
+  title: "NaadaKai",
   description: "Turn a song into a generative world you can walk through.",
 };
 

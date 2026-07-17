@@ -136,6 +136,20 @@ export interface MusicalSummary {
   lowConfidenceRhythm: boolean;
   downbeatPhaseUncertain: boolean;
   keyEstimate: string;
+  /** Tonic mode parsed from keyEstimate — the single strongest mood
+   *  distinguisher between songs (minor reads darker/introspective, major
+   *  brighter/open). "unknown" when the estimate is unparseable/atonal. */
+  keyMode: "major" | "minor" | "unknown";
+  /** Factual harmonic digest from the chord track: major/minor balance +
+   *  the most common chords, e.g. "68% minor · Am, F, C, G". Empty when no
+   *  chord data. Cross-song-comparable, unlike the normalized section
+   *  metrics — lets the LLM tell a melancholic song from an anthemic one. */
+  harmonicCharacter: string;
+  /** ABSOLUTE spectral brightness bucket (mean centroid in Hz, fixed
+   *  thresholds — NOT per-song normalized). Distinguishes a dark, bassy
+   *  song from an airy, trebly one across songs, which the normalized
+   *  per-section `brightness` cannot. */
+  brightnessLabel: "dark" | "warm" | "bright" | "brilliant";
   /** null = no loudness reference (not "measured as silent"). */
   integratedLufs: number | null;
   dynamicRangeLufs: number;

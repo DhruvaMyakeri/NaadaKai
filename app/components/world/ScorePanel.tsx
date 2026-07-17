@@ -44,7 +44,11 @@ export function ScorePanel({
         {summary.bpm !== null ? `${Math.round(summary.bpm)} BPM` : "no beat grid"}
         {summary.lowConfidenceRhythm && " (low-confidence rhythm)"}
         {summary.downbeatPhaseUncertain && " (downbeat phase uncertain)"} ·{" "}
-        {summary.keyEstimate} · {summary.sections.length} sections (
+        {summary.keyEstimate}
+        {summary.keyMode !== "unknown" ? ` (${summary.keyMode})` : ""} ·{" "}
+        {summary.brightnessLabel}
+        {summary.harmonicCharacter ? ` · ${summary.harmonicCharacter}` : ""} ·{" "}
+        {summary.sections.length} sections (
         {summary.labelRegime}
         {summary.sectionsDerivedFromEnergy && ", energy-derived"}) ·{" "}
         {summary.integratedLufs !== null
