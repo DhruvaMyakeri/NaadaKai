@@ -40,7 +40,20 @@ export const SEED_MAX_LINGBOT = 3;
  * lower = slower, more controllable pan. 18 felt frantic; ~6 is a calm
  * deliberate turn. Tune here.
  */
-export const USER_LOOK_ROTATION_DEG = 10;
+export const USER_LOOK_ROTATION_DEG = 6;
+
+/**
+ * Camera driven via Lingbot's setCameraPose (explicit [rx,ry,rz,tx,ty,tz]
+ * per chunk) instead of the discrete look/move commands. Rotation is
+ * RELATIVE to the current orientation, so an all-zero pose holds the
+ * camera perfectly still and OVERRIDES the model's own drift -- this is
+ * what guarantees the camera never turns on its own. These are the
+ * per-chunk step sizes applied while a key is held (degrees, converted to
+ * radians in worldSession). Tune for turn/walk speed.
+ */
+export const USER_LOOK_YAW_DEG = 20; // yaw per chunk while a left/right key is held
+export const USER_LOOK_PITCH_DEG = 14; // pitch per chunk while an up/down key is held
+export const USER_MOVE_STEP = 4; // translation per chunk while a WASD key is held
 
 /**
  * STRICT, wire-level guarantee against Lingbot spawning a visible person/
@@ -67,7 +80,20 @@ export const USER_LOOK_ROTATION_DEG = 10;
 export const LINGBOT_CUT_LEAD_SEC = 2.5;
 
 export const NO_CHARACTER_SUFFIX =
-  " Strict first-person point of view: no playable character, avatar, or on-screen body of any kind ever appears or moves — WASD/movement input steers the CAMERA only, nothing walks, turns, or acts as a controllable subject in the scene.";
+  " Strict, DISEMBODIED first-person point of view at ALL times: the scene is seen directly through the viewer's own eyes, with NO body, hands, avatar, playable character, person, figure, creature, animal, robot, or vehicle of any kind ever visible or ever spawned. Movement moves ONLY a free, bodiless camera drifting through the environment — it must NEVER possess, inhabit, attach to, ride, mount, follow, or take control of any entity, object, figure, or creature in order to move. Nothing in the scene is ever a walking, turning, driven, or controllable subject; the view never switches to third person and never embodies or trails anything. The world moves; the viewpoint only floats and looks.";
+
+/**
+ * HARD CAMERA LOCK — appended to EVERY prompt sent to Lingbot on the wire
+ * (alongside NO_CHARACTER_SUFFIX), because world models otherwise add
+ * their own idle "flythrough"/drift to keep the video alive. That
+ * autonomous camera motion is exactly what must never happen: the camera
+ * is a locked tripod that only ever moves in direct response to the
+ * viewer's mouse/WASD. Crucially this locks the VIEWPOINT, not the world
+ * — the environment itself must still move/surge (see the composer's
+ * Motion rule); only the observer holds still.
+ */
+export const STATIC_CAMERA_SUFFIX =
+  " The camera is a completely fixed, locked, tripod-steady viewpoint: it never pans, tilts, rolls, rotates, orbits, dollies, tracks, zooms, sways, bobs, creeps, or drifts on its own, and there is NO automatic, idle, ambient, or flythrough camera motion of any kind. The observer never travels through space on their own. Only the environment itself moves; the viewpoint holds perfectly still and changes ONLY in direct, immediate response to the viewer's explicit look/move input.";
 
 /**
  * Beat activity in the GENERATED world. On each downbeat the active
@@ -78,9 +104,16 @@ export const NO_CHARACTER_SUFFIX =
  * against stacking pulses when downbeats are dense.
  */
 export const BEAT_PULSE_SUFFIX =
-  " — a sudden bright surge of light and motion pulses through the whole scene";
-export const BEAT_PULSE_HOLD_MS = 450;
-export const BEAT_PULSE_MIN_INTERVAL_MS = 700;
+  " — as this beat lands, the light and motion ALREADY PRESENT in the scene swell gently in time with it: the existing brightness lifts a little, the existing colors deepen, and the environment's own movement quickens for a moment before easing back. This is an organic pulse woven into the world itself and in sync with the music — NEVER an explosion, blast, flash, burst, shockwave, fireworks, or any foreign effect that doesn't already belong to the scene.";
+/**
+ * Hold long enough that the surge actually RENDERS. Lingbot generates at
+ * ~1s/chunk, so the old 450ms hold often reverted before a single chunk
+ * showed the pulse — the beat reaction was invisible. ~900ms lets the
+ * surge occupy roughly a full chunk; the min interval (> hold) keeps
+ * dense downbeats from stacking pulses on top of each other.
+ */
+export const BEAT_PULSE_HOLD_MS = 900;
+export const BEAT_PULSE_MIN_INTERVAL_MS = 1100;
 
 /**
  * Helios generates in 33-frame chunks and every command takes effect on

@@ -32,8 +32,7 @@ export function collapseSeeds(
   const distinctSeeds = new Set(events.map((e) => e.seedId)).size;
   if (distinctSeeds <= maxSeeds || changeIdx.length === 0) return events;
 
-  // Rank changes by salience; keep the top (maxSeeds - 1), since the
-  // base seed already counts as one.
+  // Rank changes by salience (strongest notable moment nearby)...
   const salience = (t: number): number => {
     let best = 0.3; // default so unmatched changes still order by spacing
     for (const m of summary.notableMoments) {
@@ -41,11 +40,29 @@ export function collapseSeeds(
     }
     return best;
   };
-  const keep = new Set(
-    [...changeIdx]
-      .sort((a, b) => salience(events[b].timestamp) - salience(events[a].timestamp))
-      .slice(0, Math.max(0, maxSeeds - 1)),
+  // ...but keep them SPREAD ACROSS THE SONG, not clustered at a few
+  // adjacent big hits. Greedily take the most salient change that isn't
+  // too near an already-kept one, so the (few) image switches are
+  // distributed through the whole clip. If spacing is too strict to fill
+  // the budget, top up with the remaining most-salient changes.
+  const budget = Math.max(0, maxSeeds - 1);
+  const bySalience = [...changeIdx].sort(
+    (a, b) => salience(events[b].timestamp) - salience(events[a].timestamp),
   );
+  const minSpacingSec = summary.durationSec / (maxSeeds + 1);
+  const keep = new Set<number>();
+  for (const idx of bySalience) {
+    if (keep.size >= budget) break;
+    const t = events[idx].timestamp;
+    const tooClose = [...keep].some(
+      (k) => Math.abs(events[k].timestamp - t) < minSpacingSec,
+    );
+    if (!tooClose) keep.add(idx);
+  }
+  for (const idx of bySalience) {
+    if (keep.size >= budget) break;
+    keep.add(idx); // top up if spacing rejected too many
+  }
 
   // Rewrite: walk in time, carry the current seed forward. A kept change
   // stays a cut to its new seed; a dropped change inherits the current
