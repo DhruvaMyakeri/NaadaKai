@@ -270,7 +270,7 @@ export function SongWorldApp({
         // world on the bar (session.pulse); per-beat visual punch is the
         // effects overlay. driveCamera/pulse are no-ops off Lingbot.
         if (session.kind === "lingbot") {
-          session.driveCamera(resolveUserCamera(cameraInputRef.current));
+          session.driveCamera(resolveUserCamera(cameraInputRef.current, Date.now()));
           const bc = beatClockRef.current;
           if (bc) {
             const { downbeats } = bc.consume(t);
