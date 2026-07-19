@@ -24,10 +24,14 @@ import type { WorldSessionKind } from "../../lib/world/worldSession";
  * the mouse can never influence world content.
  */
 
-// Cosmetic mouse-parallax (Helios/mock only). Lingbot is keyboard-only.
 const LOOK_SENSITIVITY = 0.0022;
 const MAX_YAW = 0.9;
 const MAX_PITCH = 0.6;
+// Lingbot mouse-look: ignore sub-deadzone jitter, and hold the look
+// direction only briefly after the last real move so the camera pose
+// re-locks almost as soon as the mouse stops.
+const LOOK_DEADZONE_PX = 3;
+const LOOK_HOLD_MS = 110;
 
 export function WorldStage({
   mode,
@@ -74,18 +78,19 @@ export function WorldStage({
   const applyVideoParallax = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    // Lingbot's <video> IS the real navigable camera (keys drive actual
-    // look_*/move_* commands), so a CSS pan on top would double-move —
-    // only Helios/mock get the cosmetic mouse-parallax transform.
+    // Lingbot's <video> IS the real navigable camera (the mouse drives an
+    // actual camera pose), so a CSS pan on top would double-move — only
+    // Helios/mock get the cosmetic mouse-parallax transform.
     if (mode === "lingbot") return;
     const { yaw, pitch } = lookRef.current;
     video.style.transform = `scale(1.14) translate(${-yaw * 42}px, ${-pitch * 30}px)`;
   }, [mode]);
 
-  // Mouse-parallax (Helios/mock only, under pointer lock). The mouse is
-  // deliberately NOT wired to the Lingbot world camera — pointer lock
-  // emits phantom deltas that made it drift/rotate on its own. Lingbot is
-  // keyboard-only (see below).
+  // Mouse-look (all engines, under pointer lock). Helios/mock get a cosmetic
+  // CSS parallax; Lingbot turns the mouse delta into a camera-pose look
+  // direction. Only a real (past-deadzone) move (re)arms a short hold
+  // window, and once it lapses the pose locks — so sub-deadzone jitter and
+  // phantom pointer-lock deltas can't leave the camera drifting.
   useEffect(() => {
     const onLockChange = () =>
       setPointerLocked(document.pointerLockElement === stageRef.current);
@@ -101,6 +106,19 @@ export function WorldStage({
         Math.min(MAX_PITCH, look.pitch + e.movementY * LOOK_SENSITIVITY),
       );
       applyVideoParallax();
+      if (mode === "lingbot" && cameraInputRef.current) {
+        const ci = cameraInputRef.current;
+        const h =
+          e.movementX > LOOK_DEADZONE_PX ? 1 : e.movementX < -LOOK_DEADZONE_PX ? -1 : 0;
+        // screen-y down = look down
+        const v =
+          e.movementY > LOOK_DEADZONE_PX ? -1 : e.movementY < -LOOK_DEADZONE_PX ? 1 : 0;
+        if (h !== 0 || v !== 0) {
+          ci.lookH = h;
+          ci.lookV = v;
+          ci.lookActiveUntil = Date.now() + LOOK_HOLD_MS;
+        }
+      }
     };
     document.addEventListener("pointerlockchange", onLockChange);
     document.addEventListener("mousemove", onMouseMove);
@@ -108,17 +126,14 @@ export function WorldStage({
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("mousemove", onMouseMove);
     };
-  }, [applyVideoParallax]);
+  }, [applyVideoParallax, mode, cameraInputRef]);
 
-  // Camera controls (Lingbot only) — KEYBOARD ONLY.
-  //   Arrow keys  → turn the first-person camera (look_*)
-  //   W A S D     → walk it forward/back/strafe (move_*)
-  // Held = act, released = stop, so the camera can NEVER move on its own.
-  // A window blur (or unmount) zeroes everything, so a key held while
-  // focus is lost can't leave the camera stuck turning.
+  // Movement (Lingbot only) — W A S D walk the camera forward/back/strafe.
+  // Looking is mouse-driven (above). A window blur zeroes everything so a
+  // key held while focus is lost can't leave the camera walking.
   useEffect(() => {
     if (mode !== "lingbot") return;
-    const HANDLED = /^(Key[WASD]|Arrow(Left|Right|Up|Down))$/;
+    const HANDLED = /^Key[WASD]$/;
     const apply = (code: string, down: boolean) => {
       const ci = cameraInputRef.current;
       if (!ci) return;
@@ -127,10 +142,6 @@ export function WorldStage({
         case "KeyS": ci.moveLon = down ? -1 : 0; break;
         case "KeyD": ci.moveLat = down ? 1 : 0; break;
         case "KeyA": ci.moveLat = down ? -1 : 0; break;
-        case "ArrowLeft": ci.lookH = down ? -1 : 0; break;
-        case "ArrowRight": ci.lookH = down ? 1 : 0; break;
-        case "ArrowUp": ci.lookV = down ? 1 : 0; break;
-        case "ArrowDown": ci.lookV = down ? -1 : 0; break;
       }
     };
     const resetAll = () => {
@@ -144,12 +155,10 @@ export function WorldStage({
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (!HANDLED.test(e.code)) return;
-      e.preventDefault(); // arrows would otherwise scroll the page
       apply(e.code, true);
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (!HANDLED.test(e.code)) return;
-      e.preventDefault();
       apply(e.code, false);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -169,11 +178,8 @@ export function WorldStage({
     <div
       ref={stageRef}
       onClick={() => {
-        // Pointer-lock mouse-look is for the mouse-driven engines only.
-        // Lingbot is keyboard-only, so a click does nothing there.
-        if (mode !== "lingbot" && playing && !pointerLocked) {
-          stageRef.current?.requestPointerLock();
-        }
+        // Click to capture the mouse for look control (all engines).
+        if (playing && !pointerLocked) stageRef.current?.requestPointerLock();
       }}
       className="relative h-full w-full cursor-pointer overflow-hidden bg-black"
     >
@@ -207,17 +213,11 @@ export function WorldStage({
           {formatCountdown(remainingSeconds)}
         </div>
       )}
-      {playing && mode === "lingbot" && (
+      {playing && !pointerLocked && (
         <div className="absolute inset-x-0 bottom-6 flex justify-center">
           <span className={`px-4 py-1.5 text-sm text-zinc-200 ${GLASS_CHIP}`}>
-            ← → ↑ ↓ look · W A S D move
-          </span>
-        </div>
-      )}
-      {playing && mode !== "lingbot" && !pointerLocked && (
-        <div className="absolute inset-x-0 bottom-6 flex justify-center">
-          <span className={`px-4 py-1.5 text-sm text-zinc-200 ${GLASS_CHIP}`}>
-            click to look around · esc to release
+            click to look around
+            {mode === "lingbot" ? " · WASD to move" : ""} · esc to release
           </span>
         </div>
       )}

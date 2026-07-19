@@ -150,6 +150,17 @@ export interface MusicalSummary {
    *  song from an airy, trebly one across songs, which the normalized
    *  per-section `brightness` cannot. */
   brightnessLabel: "dark" | "warm" | "bright" | "brilliant";
+  /** Harmonic-vs-percussive energy balance (mean hpss_ratio). Separates a
+   *  tonal, sustained, chord-driven song from a punchy, drum-driven one —
+   *  one of the strongest identity signals for whether the world should
+   *  flow or hit. */
+  harmonicPercussiveBalance: "harmonic-dominant" | "balanced" | "percussion-driven";
+  /** How fast the timbre shifts frame to frame (mean spectral flux) —
+   *  the song's textural restlessness, from held/sustained to churning. */
+  spectralMotion: "static" | "flowing" | "restless";
+  /** Spectral width/fullness (mean spectral bandwidth) — a thin, focused
+   *  mix vs a wide, dense, enveloping one. */
+  spectralWidth: "narrow" | "full" | "wide";
   /** null = no loudness reference (not "measured as silent"). */
   integratedLufs: number | null;
   dynamicRangeLufs: number;

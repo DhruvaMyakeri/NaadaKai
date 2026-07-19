@@ -46,7 +46,8 @@ export function ScorePanel({
         {summary.downbeatPhaseUncertain && " (downbeat phase uncertain)"} ·{" "}
         {summary.keyEstimate}
         {summary.keyMode !== "unknown" ? ` (${summary.keyMode})` : ""} ·{" "}
-        {summary.brightnessLabel}
+        {summary.brightnessLabel} · {summary.harmonicPercussiveBalance} ·{" "}
+        {summary.spectralMotion} · {summary.spectralWidth}
         {summary.harmonicCharacter ? ` · ${summary.harmonicCharacter}` : ""} ·{" "}
         {summary.sections.length} sections (
         {summary.labelRegime}

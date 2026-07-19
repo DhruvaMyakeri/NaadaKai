@@ -42,6 +42,9 @@ export const SUMMARY_COLUMNS = [
   "full_mix_spectral_centroid",
   "full_mix_onset_envelope",
   "full_mix_novelty", // optional — novelty backend only
+  "full_mix_hpss_ratio", // harmonic-vs-percussive balance
+  "full_mix_spectral_flux", // timbral motion / restlessness
+  "full_mix_spectral_bandwidth", // spectral width / fullness
   "drums_rms",
   "bass_rms",
   "vocals_spectral_flatness", // tonal stems have no rms; see stem energy below
@@ -415,6 +418,46 @@ function deriveBrightnessLabel(
   return "brilliant";
 }
 
+/**
+ * Harmonic-vs-percussive balance from mean hpss_ratio (fraction of energy
+ * that is harmonic; higher = more tonal/sustained, lower = more drum-
+ * driven). Thresholds are heuristic (a tonal ballad sits ~0.86, a beat-
+ * driven track drops well below) — tune against a few contrasting songs.
+ */
+function deriveHarmonicPercussiveBalance(
+  hpss: Float64Array,
+): "harmonic-dominant" | "balanced" | "percussion-driven" {
+  if (hpss.length === 0) return "balanced"; // column absent → neutral
+  const m = mean(hpss, 0, hpss.length);
+  if (m >= 0.82) return "harmonic-dominant";
+  if (m >= 0.62) return "balanced";
+  return "percussion-driven";
+}
+
+/** Timbral restlessness from mean spectral flux (rate of spectral change
+ *  frame to frame). Heuristic thresholds around the observed p50 (~0.10). */
+function deriveSpectralMotion(
+  flux: Float64Array,
+): "static" | "flowing" | "restless" {
+  if (flux.length === 0) return "flowing"; // column absent → neutral
+  const m = mean(flux, 0, flux.length);
+  if (m < 0.06) return "static";
+  if (m < 0.13) return "flowing";
+  return "restless";
+}
+
+/** Spectral width/fullness from mean spectral bandwidth (Hz). Heuristic
+ *  thresholds around the observed range (~2400–3700 Hz). */
+function deriveSpectralWidth(
+  bandwidth: Float64Array,
+): "narrow" | "full" | "wide" {
+  if (bandwidth.length === 0) return "full"; // column absent → neutral
+  const m = mean(bandwidth, 0, bandwidth.length);
+  if (m < 2600) return "narrow";
+  if (m < 3400) return "full";
+  return "wide";
+}
+
 // ── entry point ──
 
 /**
@@ -461,6 +504,15 @@ export function buildMusicalSummary(
     harmonicCharacter: deriveHarmonicCharacter(meta.chords, durationSec),
     brightnessLabel: deriveBrightnessLabel(
       features.columns.get("full_mix_spectral_centroid") ?? new Float64Array(0),
+    ),
+    harmonicPercussiveBalance: deriveHarmonicPercussiveBalance(
+      features.columns.get("full_mix_hpss_ratio") ?? new Float64Array(0),
+    ),
+    spectralMotion: deriveSpectralMotion(
+      features.columns.get("full_mix_spectral_flux") ?? new Float64Array(0),
+    ),
+    spectralWidth: deriveSpectralWidth(
+      features.columns.get("full_mix_spectral_bandwidth") ?? new Float64Array(0),
     ),
     integratedLufs: meta.loudness.integrated_lufs, // may be null
     dynamicRangeLufs: round(meta.loudness.dynamic_range_lufs, 2),
