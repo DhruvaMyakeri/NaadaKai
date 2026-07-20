@@ -2,6 +2,8 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { BundleError, loadMeta, resolveAudioPath, resolveBundle } from "../../../lib/server/bundle";
+import { IS_PROXY_FRONTEND } from "../../../lib/server/config";
+import { proxyToBackend } from "../../../lib/server/backendProxy";
 
 /**
  * GET /api/bundles/audio?id={dir}/{song_id}
@@ -31,6 +33,11 @@ const MIME: Record<string, string> = {
 };
 
 export async function GET(request: Request) {
+  // Vercel frontend: forward to Vultr (streaming, Range-aware) since
+  // the audio file lives with the bundle on the backend, not in the
+  // Vercel deploy. No-op locally.
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/bundles/audio");
+
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing ?id" }, { status: 400 });
 

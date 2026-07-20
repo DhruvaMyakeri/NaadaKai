@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { BundleError, loadFeatures, loadMeta, resolveBundle } from "../../../lib/server/bundle";
-import { CLIP_SECONDS } from "../../../lib/server/config";
+import { CLIP_SECONDS, IS_PROXY_FRONTEND } from "../../../lib/server/config";
+import { proxyToBackend } from "../../../lib/server/backendProxy";
 
 /**
  * GET /api/bundles/features?id={dir}/{song_id}&columns=a,b,c
@@ -27,6 +28,8 @@ const DEFAULT_COLUMNS = [
 const MAX_COLUMNS = 16;
 
 export async function GET(request: Request) {
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/bundles/features");
+
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing ?id" }, { status: 400 });
