@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "@reactor-team/ui/styles.css";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "NaadaKai",
@@ -37,7 +38,9 @@ export default function RootLayout({
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/85" />
         </div>
-        <div className="relative z-10">{children}</div>
+        <div className="relative z-10">
+          <Providers>{children}</Providers>
+        </div>
       </body>
     </html>
   );

@@ -144,3 +144,20 @@ export const NEMOTRON_REASONING_BUDGET = Number(
 export function getNemotronApiKey(): string | undefined {
   return process.env.NVIDIA_NEMO_KEY;
 }
+
+// ── Frontend ↔ Backend split (Vercel frontend, Vultr backend) ─────────
+//
+// In prod the Vercel deployment is a *frontend* that proxies the two
+// slow routes (/api/compose, /api/extract) to a small Vultr box that
+// actually runs Nemotron. Locally, both env vars are unset:
+// IS_PROXY_FRONTEND is false, the routes execute their real handlers
+// in-process, and behavior is byte-for-byte identical to today.
+//
+// BACKEND_SHARED_SECRET is a single arbitrary string that must match
+// on both sides — the frontend injects it as `x-world-backend-secret`,
+// the backend rejects any request without it. It is NOT a JWT and is
+// never seen by the browser (both variables are read server-side only).
+
+export const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL ?? "";
+export const BACKEND_SHARED_SECRET = process.env.BACKEND_SHARED_SECRET ?? "";
+export const IS_PROXY_FRONTEND = Boolean(BACKEND_BASE_URL);

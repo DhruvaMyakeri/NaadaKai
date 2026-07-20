@@ -203,10 +203,12 @@ class ReactorWorldSession implements WorldSession {
   private seedB64 = new Map<string, string>();
   private currentSeedId: string | null = null;
   private currentImageStrength = IMAGE_STRENGTH;
+  private tokenProvider: TokenProvider;
 
-  constructor() {
+  constructor(tokenProvider: TokenProvider) {
     // Swap WORLD_MODEL in config.ts to A/B Helios vs LingBot-World —
     // both speak the same conditioning command surface.
+    this.tokenProvider = tokenProvider;
     this.reactor = new Reactor({ modelName: WORLD_MODEL });
 
     this.reactor.on("trackReceived", (name: string, track: MediaStreamTrack) => {
@@ -302,17 +304,9 @@ class ReactorWorldSession implements WorldSession {
       });
     });
 
-    // getJwt resolver: minted server-side from REACTOR_API_KEY, browser-
-    // cached via Cache-Control until expiry (see the token route).
-    await this.reactor.connect(async () => {
-      const r = await fetch("/api/reactor/token");
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Token fetch failed: ${r.status}`);
-      }
-      const { jwt } = (await r.json()) as { jwt: string };
-      return jwt;
-    });
+    // getJwt resolver — either the legacy /api/reactor/token path or the
+    // play-gate injected provider (see createWorldSession).
+    await this.reactor.connect(this.tokenProvider);
     await ready;
   }
 
@@ -526,8 +520,10 @@ class LingbotWorldSession implements WorldSession {
   private basePrompt = "";
   private lastPulseAt = 0;
   private pulseRevertTimer: ReturnType<typeof setTimeout> | null = null;
+  private tokenProvider: TokenProvider;
 
-  constructor() {
+  constructor(tokenProvider: TokenProvider) {
+    this.tokenProvider = tokenProvider;
     this.model = new LingbotWorld2Model();
     this.model.on("trackReceived", (name: string, track: MediaStreamTrack) => {
       console.info(`[lingbot] trackReceived: "${name}"`);
@@ -611,16 +607,10 @@ class LingbotWorldSession implements WorldSession {
         reject(new Error(err?.message ?? "Lingbot connection error"));
       });
     });
-    // Same account token as Helios — the JWT is model-agnostic.
-    await this.model.connect(async () => {
-      const r = await fetch("/api/reactor/token");
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Token fetch failed: ${r.status}`);
-      }
-      const { jwt } = (await r.json()) as { jwt: string };
-      return jwt;
-    });
+    // Same account token as Helios — the JWT is model-agnostic. The
+    // resolver either fetches /api/reactor/token (legacy path, /demo)
+    // or is the play-gate provider injected by createWorldSession.
+    await this.model.connect(this.tokenProvider);
     await ready;
   }
 
@@ -958,12 +948,35 @@ class MockWorldSession implements WorldSession {
   }
 }
 
-export function createWorldSession(kind: WorldSessionKind): WorldSession {
+/**
+ * How the session gets a Reactor JWT. Default: fetch /api/reactor/token
+ * (the legacy free path — still used by /demo and by local dev when no
+ * play-gate is configured). In prod the main app injects a provider
+ * that first goes through /api/play/claim so the JWT is only minted for
+ * users who've cleared the free-play gate.
+ */
+export type TokenProvider = () => Promise<string>;
+
+const defaultTokenProvider: TokenProvider = async () => {
+  const r = await fetch("/api/reactor/token");
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Token fetch failed: ${r.status}`);
+  }
+  const { jwt } = (await r.json()) as { jwt: string };
+  return jwt;
+};
+
+export function createWorldSession(
+  kind: WorldSessionKind,
+  opts: { tokenProvider?: TokenProvider } = {},
+): WorldSession {
+  const tokenProvider = opts.tokenProvider ?? defaultTokenProvider;
   switch (kind) {
     case "lingbot":
-      return new LingbotWorldSession();
+      return new LingbotWorldSession(tokenProvider);
     case "reactor":
-      return new ReactorWorldSession();
+      return new ReactorWorldSession(tokenProvider);
     default:
       return new MockWorldSession();
   }

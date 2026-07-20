@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { BundleError, loadFeatures, loadMeta, resolveBundle } from "../../lib/server/bundle";
-import { CLIP_SECONDS } from "../../lib/server/config";
+import { CLIP_SECONDS, IS_PROXY_FRONTEND } from "../../lib/server/config";
+import { assertBackendAuth, proxyToBackend } from "../../lib/server/backendProxy";
 import { SUMMARY_COLUMNS, buildMusicalSummary } from "../../lib/server/summarize";
 import { ComposeError, composeWithNemotron } from "../../lib/server/compose";
 import { loadSeedCatalog } from "../../lib/server/seedCatalog";
@@ -24,6 +25,13 @@ import type { CompositionResult, RhythmData, SeedRef } from "../../lib/world/typ
  * future sub-window offset explicitly (always 0 today).
  */
 export async function POST(request: Request) {
+  // Vercel frontend: forward to the Vultr backend (which owns the
+  // Nemotron key + extractor bundles). No-op locally.
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/compose");
+  // Vultr backend: reject unauthenticated calls. No-op locally.
+  const guard = assertBackendAuth(request);
+  if (guard) return guard;
+
   let bundleId: string;
   try {
     const body = (await request.json()) as { bundleId?: string };
