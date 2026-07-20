@@ -158,6 +158,11 @@ export function getNemotronApiKey(): string | undefined {
 // the backend rejects any request without it. It is NOT a JWT and is
 // never seen by the browser (both variables are read server-side only).
 
-export const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL ?? "";
-export const BACKEND_SHARED_SECRET = process.env.BACKEND_SHARED_SECRET ?? "";
+// .trim() defends against trailing whitespace/newlines from bad pastes
+// in the Vercel env-var UI — those turn into "http://ip:port /path"
+// which throws "Failed to parse URL" at fetch time.
+export const BACKEND_BASE_URL = (process.env.BACKEND_BASE_URL ?? "").trim();
+export const BACKEND_SHARED_SECRET = (
+  process.env.BACKEND_SHARED_SECRET ?? ""
+).trim();
 export const IS_PROXY_FRONTEND = Boolean(BACKEND_BASE_URL);
