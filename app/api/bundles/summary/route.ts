@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { BundleError, loadFeatures, loadMeta, resolveBundle } from "../../../lib/server/bundle";
-import { CLIP_SECONDS } from "../../../lib/server/config";
+import { CLIP_SECONDS, IS_PROXY_FRONTEND } from "../../../lib/server/config";
+import { proxyToBackend } from "../../../lib/server/backendProxy";
 import { SUMMARY_COLUMNS, buildMusicalSummary } from "../../../lib/server/summarize";
 
 /**
@@ -11,6 +12,8 @@ import { SUMMARY_COLUMNS, buildMusicalSummary } from "../../../lib/server/summar
  * independently of the LLM. The same function feeds /api/compose.
  */
 export async function GET(request: Request) {
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/bundles/summary");
+
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing ?id" }, { status: 400 });
 
