@@ -31,27 +31,36 @@ export async function proxyToBackend(
   headers.delete("connection");
   headers.set("x-world-backend-secret", BACKEND_SHARED_SECRET);
 
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const init: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers,
-    body:
-      request.method === "GET" || request.method === "HEAD"
-        ? null
-        : request.body,
-    // Node/undici requires `duplex: "half"` when streaming a request
-    // body. Setting it unconditionally is harmless on other methods.
-    duplex: "half",
+    body: hasBody ? request.body : null,
   };
+  // Node/undici requires `duplex: "half"` when a body is streamed.
+  // Setting it on a bodyless request throws in Vercel's runtime, so
+  // only add it when there is actually a body to stream.
+  if (hasBody) init.duplex = "half";
 
-  const upstream = await fetch(target, init);
-  // Pass the response through as-is (status + headers + body).
-  const outHeaders = new Headers(upstream.headers);
-  outHeaders.delete("content-encoding");
-  outHeaders.delete("transfer-encoding");
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: outHeaders,
-  });
+  try {
+    const upstream = await fetch(target, init);
+    const outHeaders = new Headers(upstream.headers);
+    outHeaders.delete("content-encoding");
+    outHeaders.delete("transfer-encoding");
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: outHeaders,
+    });
+  } catch (e) {
+    // Empty-body 500s from Vercel are invisible — surface the reason
+    // as JSON so the client can render something useful.
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[proxy] ${target} -> ${message}`);
+    return new Response(
+      JSON.stringify({ error: `Backend proxy failed: ${message}` }),
+      { status: 502, headers: { "Content-Type": "application/json" } },
+    );
+  }
 }
 
 /** Guard for the backend side: rejects unauthenticated requests when a
