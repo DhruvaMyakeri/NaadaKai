@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getJob, startExtraction } from "../../lib/server/extractJob";
+import { IS_PROXY_FRONTEND } from "../../lib/server/config";
+import { assertBackendAuth, proxyToBackend } from "../../lib/server/backendProxy";
 
 /**
  * POST /api/extract  (multipart form, field "file")
@@ -16,6 +18,10 @@ const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 const AUDIO_EXT = /\.(mp3|wav|flac|ogg|m4a)$/i;
 
 export async function POST(request: Request) {
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/extract");
+  const guard = assertBackendAuth(request);
+  if (guard) return guard;
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -49,6 +55,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (IS_PROXY_FRONTEND) return proxyToBackend(request, "/api/extract");
+  const guard = assertBackendAuth(request);
+  if (guard) return guard;
+
   const jobId = new URL(request.url).searchParams.get("job");
   if (!jobId) return NextResponse.json({ error: "Missing ?job" }, { status: 400 });
   const job = getJob(jobId);

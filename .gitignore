@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 .env.local
+# Google OAuth client JSONs — never commit (contain client_secret)
+*_client.json
+*_client_secret*.json
+client_secret*.json
 
 # ── Node / Next.js ──────────────────────────────────────────────────
 node_modules/

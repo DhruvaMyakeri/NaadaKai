@@ -1,5 +1,6 @@
 "use client";
 
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BundlePicker } from "./components/world/BundlePicker";
 import { UploadPanel } from "./components/world/UploadPanel";
@@ -58,6 +59,16 @@ import type { BundleListEntry, CompositionResult } from "./lib/world/types";
 
 type Phase = "idle" | "composing" | "ready" | "connecting" | "playing" | "ended";
 
+// The upload panel is disabled in prod: the extractor is not deployed
+// (no GPU on the frontend host), so users can only pick from the
+// pre-extracted catalog. Local dev sets NEXT_PUBLIC_ENABLE_UPLOAD=true.
+const UPLOAD_ENABLED = process.env.NEXT_PUBLIC_ENABLE_UPLOAD === "true";
+// Auth is only visible when Google credentials are wired in. Kept
+// separate from AUTH_ENABLED (server-side) so we don't need to plumb it
+// through props: the button just doesn't render when the env var is
+// absent, and clicking it would hit an empty providers list anyway.
+const AUTH_UI_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
+
 export function SongWorldApp({
   hasReactorKey,
   hasNemotronKey,
@@ -65,6 +76,19 @@ export function SongWorldApp({
   hasReactorKey: boolean;
   hasNemotronKey: boolean;
 }) {
+  const { data: session, status: sessionStatus } = useSession();
+  // Result of the last /api/play/claim GET (or POST): plays-left chip
+  // data. `null` means "not fetched yet" or unlimited (local dev).
+  const [playStatus, setPlayStatus] = useState<{
+    remaining: number | null;
+    limit: number;
+    kind: "user" | "anon";
+    unlimited: boolean;
+  } | null>(null);
+  // Reason surfaced by the gate — drives the sign-in / exhausted panel.
+  const [gateReason, setGateReason] = useState<"login_required" | "exhausted" | null>(
+    null,
+  );
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [bundle, setBundle] = useState<BundleListEntry | null>(null);
@@ -170,11 +194,57 @@ export function SongWorldApp({
         ? collapseSeeds(comp.events, comp.summary, SEED_MAX_LINGBOT)
         : comp.events;
     setError(null);
+    setGateReason(null);
     setPhase("connecting");
+
+    // Play-gate + JWT mint. Mock mode is a pure-client procedural
+    // renderer with no Reactor session, so it doesn't burn a play — the
+    // gate is only for real world sessions.
+    let claimedJwt: string | null = null;
+    if (mode !== "mock") {
+      try {
+        const res = await fetch("/api/play/claim", { method: "POST" });
+        const data = (await res.json()) as {
+          jwt?: string;
+          error?: string;
+          reason?: "login_required" | "exhausted";
+          remaining?: number;
+          limit?: number;
+          kind?: "user" | "anon";
+        };
+        if (!res.ok) {
+          if (res.status === 402 && data.reason) {
+            setGateReason(data.reason);
+            setPhase("ready");
+            return;
+          }
+          throw new Error(data.error ?? `Play gate failed: ${res.status}`);
+        }
+        claimedJwt = data.jwt ?? null;
+        if (data.kind) {
+          setPlayStatus({
+            kind: data.kind,
+            limit: data.limit ?? 0,
+            remaining: data.remaining ?? null,
+            unlimited: data.remaining === undefined,
+          });
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Play gate failed");
+        setPhase("ready");
+        return;
+      }
+    }
 
     try {
       // World session (real Reactor or mock, per the toggle/config).
-      const session = createWorldSession(mode);
+      // On real sessions we inject the JWT we just claimed above so the
+      // session doesn't hit /api/reactor/token again (that path is only
+      // for /demo and local dev without the gate).
+      const session = createWorldSession(
+        mode,
+        claimedJwt ? { tokenProvider: async () => claimedJwt! } : undefined,
+      );
       sessionRef.current = session;
       session.onTrack((track) => setVideoTrack(track));
       // Model-side rejections (command_error / no video after start)
@@ -324,6 +394,30 @@ export function SongWorldApp({
     };
   }, []);
 
+  // Refresh the plays-left chip whenever the session identity changes.
+  // GET /api/play/claim is read-only — safe to call on every render of
+  // the picker; results include `unlimited: true` in local dev.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/play/claim")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setPlayStatus({
+          kind: data.kind,
+          limit: data.limit,
+          remaining: data.remaining,
+          unlimited: data.unlimited,
+        });
+      })
+      .catch(() => {
+        /* status chip is optional — silence transient poll fails */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionStatus]);
+
   const inStage = phase === "connecting" || phase === "playing" || phase === "ended";
   const activeEvent =
     composition && activeIndex >= 0 ? composition.events[activeIndex] : null;
@@ -335,6 +429,41 @@ export function SongWorldApp({
 
       {!inStage ? (
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-6 py-16">
+          {/* Top-right cluster: plays-left chip + sign-in/out. Rendered
+              even when auth/DB aren't configured — the chip just says
+              "unlimited" and the login button is hidden. */}
+          {(AUTH_UI_ENABLED || (playStatus && !playStatus.unlimited)) && (
+            <div className="fixed right-4 top-4 z-20 flex items-center gap-2 text-xs text-zinc-300">
+              {playStatus && !playStatus.unlimited && (
+                <span className={`px-2.5 py-1 ${GLASS_CHIP}`}>
+                  {playStatus.remaining ?? 0} play
+                  {(playStatus.remaining ?? 0) === 1 ? "" : "s"} left
+                </span>
+              )}
+              {AUTH_UI_ENABLED &&
+                (session?.user ? (
+                  <>
+                    <span className={`px-2.5 py-1 ${GLASS_CHIP}`}>
+                      {session.user.email}
+                    </span>
+                    <button
+                      onClick={() => void signOut()}
+                      className={`px-2.5 py-1 ${GLASS_CHIP} hover:text-white`}
+                    >
+                      sign out
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => void signIn("google")}
+                    className={`px-2.5 py-1 ${GLASS_CHIP} hover:text-white`}
+                  >
+                    sign in with Google
+                  </button>
+                ))}
+            </div>
+          )}
+
           <header className="text-center">
             <h1 className="text-4xl font-semibold tracking-tight text-zinc-50 sm:text-5xl">
               Naada<span className="text-brand">Kai</span>
@@ -364,9 +493,64 @@ export function SongWorldApp({
                 key={bundleListVersion}
                 onPick={(b) => void handlePick(b)}
               />
-              <UploadPanel
-                onExtracted={() => setBundleListVersion((v) => v + 1)}
-              />
+              {UPLOAD_ENABLED ? (
+                <UploadPanel
+                  onExtracted={() => setBundleListVersion((v) => v + 1)}
+                />
+              ) : (
+                // Prod: no extractor is deployed, so the upload tile is
+                // shown as a faded placeholder with a handwritten
+                // "coming soon" — the affordance stays visible so users
+                // know it's part of the roadmap, not a missing feature.
+                <div className="relative w-full">
+                  <div className="pointer-events-none">
+                    <UploadPanel
+                      onExtracted={() => {
+                        /* prod: disabled, so this never fires */
+                      }}
+                      disabled
+                    />
+                  </div>
+                  <div
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                    aria-hidden
+                  >
+                    <span
+                      className="rotate-[-4deg] text-2xl text-brand/90"
+                      style={{
+                        fontFamily:
+                          "'Caveat', 'Homemade Apple', 'Segoe Script', cursive",
+                        textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+                      }}
+                    >
+                      coming soon
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {gateReason && (
+                <div
+                  className={`w-full p-3 text-sm text-amber-200 ${GLASS_PANEL_WARNING}`}
+                >
+                  {gateReason === "login_required" ? (
+                    <>
+                      That was your free play. Sign in with Google to get 5
+                      more.
+                      {AUTH_UI_ENABLED && (
+                        <button
+                          onClick={() => void signIn("google")}
+                          className={`ml-2 px-2.5 py-1 ${GLASS_CHIP} hover:text-white`}
+                        >
+                          sign in
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>You've used all your plays on this account.</>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -439,6 +623,21 @@ export function SongWorldApp({
             playing={phase === "playing"}
             remainingSeconds={remaining}
           />
+
+          {/* Back button — visible during connect/play/ended so the user
+              can always leave the world cleanly. endExperience closes
+              the Reactor session, pauses the audio, and releases pointer
+              lock; then we bounce back to the picker via newSong. */}
+          <button
+            onClick={() => {
+              endExperience();
+              newSong();
+            }}
+            className={`absolute left-4 top-4 z-20 px-3 py-1.5 text-sm text-zinc-200 ${GLASS_CHIP} hover:text-white`}
+            aria-label="Exit the world"
+          >
+            ← back
+          </button>
 
           {/* Model rejections during connect/playback — visible in the
               stage, not just the console. */}
