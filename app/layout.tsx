@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import "@reactor-team/ui/styles.css";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -41,6 +42,7 @@ export default function RootLayout({
         <div className="relative z-10">
           <Providers>{children}</Providers>
         </div>
+        <Analytics />
       </body>
     </html>
   );
