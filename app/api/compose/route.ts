@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { BundleError, loadFeatures, loadMeta, resolveBundle } from "../../lib/server/bundle";
-import { CLIP_SECONDS, IS_PROXY_FRONTEND, WORLD_COMPOSER } from "../../lib/server/config";
+import { CLIP_SECONDS, IS_PROXY_FRONTEND } from "../../lib/server/config";
 import { assertBackendAuth, proxyToBackend } from "../../lib/server/backendProxy";
 import { SUMMARY_COLUMNS, buildMusicalSummary } from "../../lib/server/summarize";
 import { ComposeError, composeWithNemotron } from "../../lib/server/compose";
-import { composeWithGemini } from "../../lib/server/composeGemini";
 import { loadSeedCatalog } from "../../lib/server/seedCatalog";
 import type { CompositionResult, RhythmData, SeedRef } from "../../lib/world/types";
 
@@ -125,12 +124,7 @@ async function runCompose(bundleId: string): Promise<CompositionResult> {
   console.info(JSON.stringify(summary, null, 2));
 
   const seedCatalog = await loadSeedCatalog();
-  // Composer choice is env-driven; both paths accept the same summary
-  // + seed catalog and return the same ComposeOutput shape.
-  const composed =
-    WORLD_COMPOSER === "gemini"
-      ? await composeWithGemini(summary, seedCatalog)
-      : await composeWithNemotron(summary, seedCatalog);
+  const composed = await composeWithNemotron(summary, seedCatalog);
 
   const seeds: SeedRef[] = [];
   for (const event of composed.events) {

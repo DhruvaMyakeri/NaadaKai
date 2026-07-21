@@ -145,20 +145,6 @@ export function getNemotronApiKey(): string | undefined {
   return process.env.NVIDIA_NEMO_KEY;
 }
 
-// ── Stage 2 (Gemini alternate composer) ──
-//
-// Which LLM the composer uses: "nemotron" (default, slow but powerful) or
-// "gemini" (Google, fast). Same prompts, same output schema, same sanitize.
-// Switch at runtime without a code change.
-export const WORLD_COMPOSER = (process.env.WORLD_COMPOSER ?? "nemotron").trim();
-
-export const GEMINI_MODEL = (process.env.GEMINI_MODEL ?? "gemini-2.5-flash").trim();
-
-/** Reads the key at call time; NEVER export the value to client code. */
-export function getGeminiApiKey(): string | undefined {
-  return process.env.GEMINI_API_KEY;
-}
-
 // ── Frontend ↔ Backend split (Vercel frontend, Vultr backend) ─────────
 //
 // In prod the Vercel deployment is a *frontend* that proxies the two
