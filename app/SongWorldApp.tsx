@@ -430,9 +430,12 @@ export function SongWorldApp({
       {!inStage ? (
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-6 py-16">
           {/* Top-right cluster: plays-left chip + sign-in/out. Rendered
-              even when auth/DB aren't configured — the chip just says
-              "unlimited" and the login button is hidden. */}
-          {(AUTH_UI_ENABLED || (playStatus && !playStatus.unlimited)) && (
+              only on the landing/picker screen — once the user is past
+              song selection (composing / ready) the cluster is hidden
+              so it doesn't distract from the score + "Enter the world"
+              flow. Hidden entirely when auth/DB aren't configured. */}
+          {phase === "idle" &&
+            (AUTH_UI_ENABLED || (playStatus && !playStatus.unlimited)) && (
             <div className="fixed right-4 top-4 z-20 flex items-center gap-2 text-xs text-zinc-300">
               {playStatus && !playStatus.unlimited && (
                 <span className={`px-2.5 py-1 ${GLASS_CHIP}`}>
@@ -516,7 +519,7 @@ export function SongWorldApp({
                     aria-hidden
                   >
                     <span
-                      className="rotate-[-4deg] text-2xl text-brand/90"
+                      className="rotate-[-4deg] text-5xl text-brand/90 sm:text-6xl"
                       style={{
                         fontFamily:
                           "'Caveat', 'Homemade Apple', 'Segoe Script', cursive",
@@ -547,7 +550,10 @@ export function SongWorldApp({
                       )}
                     </>
                   ) : (
-                    <>You've used all your plays on this account.</>
+                    <>
+                      Thank you for trying out NaadaKai — the full version
+                      will be available soon.
+                    </>
                   )}
                 </div>
               )}
