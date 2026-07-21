@@ -137,14 +137,45 @@ export function SongWorldApp({
       // The composition pass: Stage 1 + Stage 2 run server-side
       // (NVIDIA_NEMO_KEY never reaches the browser). No client fallback
       // composer — if this fails, the error is surfaced as-is.
-      const res = await fetch("/api/compose", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bundleId: picked.id }),
-      });
-      const data = (await res.json()) as CompositionResult & { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Composition failed: ${res.status}`);
+      //
+      // /api/compose is ASYNC: the backend kicks the Nemotron call off
+      // in a background job and immediately returns 202 { status:
+      // "pending" }. We poll every 3s until we get a non-pending
+      // response. This is required because Vercel Hobby serverless caps
+      // functions at 60s and Nemotron takes 60-120s — a single blocking
+      // request would time out. See app/api/compose/route.ts for the
+      // job cache.
+      let data: (CompositionResult & { error?: string }) | null = null;
+      for (let attempt = 0; attempt < 80; attempt++) {
+        const res = await fetch("/api/compose", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bundleId: picked.id }),
+        });
+        if (res.status === 202) {
+          await new Promise((r) => setTimeout(r, 3000));
+          continue;
+        }
+        // Read body defensively — Vercel edge errors return HTML, and
+        // res.json() would throw the unhelpful "Unexpected token 'A'"
+        // parse error on top of the real problem.
+        const text = await res.text();
+        let parsed: (CompositionResult & { error?: string }) | null = null;
+        try {
+          parsed = text ? (JSON.parse(text) as CompositionResult & { error?: string }) : null;
+        } catch {
+          throw new Error(
+            `Composition ${res.status}: ${text.slice(0, 200) || "no body"}`,
+          );
+        }
+        if (!res.ok) {
+          throw new Error(parsed?.error ?? `Composition failed: ${res.status}`);
+        }
+        data = parsed;
+        break;
+      }
+      if (!data) {
+        throw new Error("Composition still pending after 4 minutes — try again");
       }
       if (!data.events || data.events.length === 0) {
         throw new Error("Composition returned no events");
