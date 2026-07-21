@@ -155,15 +155,20 @@ export function SongWorldApp({
       // functions at 60s and Nemotron takes 60-120s — a single blocking
       // request would time out. See app/api/compose/route.ts for the
       // job cache.
+      // Nemotron composes reliably but slowly (60-180s typical, occasionally
+      // longer under load). We poll for up to ~15 minutes so a genuinely slow
+      // response never surfaces as a client-side timeout — the async pattern
+      // means each poll is a fast round-trip, so Vercel's 60s function
+      // ceiling is never at risk. 5s interval keeps request volume modest.
       let data: (CompositionResult & { error?: string }) | null = null;
-      for (let attempt = 0; attempt < 80; attempt++) {
+      for (let attempt = 0; attempt < 180; attempt++) {
         const res = await fetch("/api/compose", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bundleId: picked.id }),
         });
         if (res.status === 202) {
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 5000));
           continue;
         }
         // Read body defensively — Vercel edge errors return HTML, and
@@ -185,7 +190,7 @@ export function SongWorldApp({
         break;
       }
       if (!data) {
-        throw new Error("Composition still pending after 4 minutes — try again");
+        throw new Error("Composition still pending after 15 minutes — try again");
       }
       if (!data.events || data.events.length === 0) {
         throw new Error("Composition returned no events");
