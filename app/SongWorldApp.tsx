@@ -123,7 +123,17 @@ export function SongWorldApp({
   // ── Bundle pick → the one server-side composition pass ────────────────
 
   const handlePick = useCallback(async (picked: BundleListEntry) => {
+    // Preflight the play-gate BEFORE burning a Nemotron compose (~90s
+    // of paid API time) on someone who has no plays left. The GET on
+    // /api/play/claim is read-only — it never claims a play — so this
+    // check is safe to make eagerly. The real claim still runs at
+    // startExperience-time, so this is UX-only, not a security check.
+    if (playStatus && !playStatus.unlimited && playStatus.remaining === 0) {
+      setGateReason(session?.user ? "exhausted" : "login_required");
+      return;
+    }
     setError(null);
+    setGateReason(null);
     setPhase("composing");
     setBundle(picked);
     framesRef.current = null;
@@ -196,7 +206,7 @@ export function SongWorldApp({
       setBundle(null);
       setPhase("idle");
     }
-  }, []);
+  }, [playStatus, session]);
 
   // ── Playback: session start, scheduled score execution ────────────────
 
@@ -245,8 +255,15 @@ export function SongWorldApp({
         };
         if (!res.ok) {
           if (res.status === 402 && data.reason) {
+            // Kick the user back to the picker (phase "idle") so the
+            // gate message is visible — the gate panel is scoped to
+            // that phase, and "ready" would leave the message hidden
+            // beneath the "Enter the world" button.
             setGateReason(data.reason);
-            setPhase("ready");
+            setBundle(null);
+            setComposition(null);
+            setActiveIndex(-1);
+            setPhase("idle");
             return;
           }
           throw new Error(data.error ?? `Play gate failed: ${res.status}`);
