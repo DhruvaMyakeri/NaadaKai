@@ -200,27 +200,56 @@ export async function composeWithNemotron(
   const systemPrompt = ACTIVE_TEMPLATE.buildSystemPrompt(summary, seeds);
   const userMessage = ACTIVE_TEMPLATE.buildUserMessage(summary, seeds);
 
-  let completion: OpenAI.Chat.Completions.ChatCompletion;
-  try {
-    // NVIDIA extension fields (chat_template_kwargs, reasoning_budget)
-    // ride inside the params object — the OpenAI SDK passes unknown
-    // fields through to the request body. Thinking stays on, but
-    // budgeted so the reasoning trace can't consume the whole completion.
-    const params = {
-      model: NEMOTRON_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      temperature: NEMOTRON_TEMPERATURE,
-      top_p: NEMOTRON_TOP_P,
-      max_tokens: NEMOTRON_MAX_TOKENS,
-      chat_template_kwargs: { enable_thinking: true },
-      reasoning_budget: NEMOTRON_REASONING_BUDGET,
-    } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
-    completion = await client.chat.completions.create(params);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+  // NVIDIA extension fields (chat_template_kwargs, reasoning_budget)
+  // ride inside the params object — the OpenAI SDK passes unknown
+  // fields through to the request body. Thinking stays on, but
+  // budgeted so the reasoning trace can't consume the whole completion.
+  const params = {
+    model: NEMOTRON_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    temperature: NEMOTRON_TEMPERATURE,
+    top_p: NEMOTRON_TOP_P,
+    max_tokens: NEMOTRON_MAX_TOKENS,
+    chat_template_kwargs: { enable_thinking: true },
+    reasoning_budget: NEMOTRON_REASONING_BUDGET,
+  } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+
+  // Retry on transient throttling (429) and server overload (503/500) —
+  // NVIDIA's free tier is capacity-capped and returns 503 with
+  // "Worker local total request limit reached" during spikes. Exponential
+  // backoff (10s → 30s → 60s) gives their queue time to drain without
+  // hammering it further. Non-transient errors (400 bad prompt, 401 bad
+  // key, etc.) fail fast on the first attempt.
+  const MAX_ATTEMPTS = 4;
+  const BACKOFF_SEC = [10, 30, 60];
+  let completion: OpenAI.Chat.Completions.ChatCompletion | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      completion = await client.chat.completions.create(params);
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      const status =
+        typeof e === "object" && e !== null && "status" in e
+          ? (e as { status?: number }).status
+          : undefined;
+      const isTransient =
+        status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+      if (!isTransient || attempt === MAX_ATTEMPTS) break;
+      const wait = BACKOFF_SEC[attempt - 1] ?? 60;
+      console.warn(
+        `[nemotron] attempt ${attempt} failed (status=${status}) — retrying in ${wait}s`,
+      );
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
+  }
+  if (!completion) {
+    const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
     throw new ComposeError(`Nemotron call failed: ${msg}`);
   }
 

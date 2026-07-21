@@ -40,7 +40,13 @@ type ComposeJob =
 // backend; if this ever runs multi-instance it needs Redis or similar.
 const jobs = new Map<string, ComposeJob>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
-const ERROR_TTL_MS = 5_000;
+// Cache failures for a full minute — a failed Nemotron call means NVIDIA
+// is stressed, throttling us, or the prompt is genuinely broken. Retrying
+// after only 5s pours more requests into a queue that's already overloaded
+// (this is exactly how we hit "228/32" during setup). 60s gives the queue
+// time to drain and the retry-with-backoff inside composeWithNemotron
+// time to have already run its full ladder.
+const ERROR_TTL_MS = 60_000;
 
 export async function POST(request: Request) {
   // Vercel frontend: forward to the Vultr backend (which owns the
