@@ -118,23 +118,6 @@ export interface SectionDigest {
   trend: "building" | "steady" | "dropping";
   /** Which stem dominates: relative per-stem energy heuristic. */
   dominance: "drum-heavy" | "bass-driven" | "vocal-led" | "sparse" | "balanced";
-  /** Timestamp (extractor time base) of the loudest single frame within
-   *  this section — where the section's punch actually lands. The
-   *  composer uses this to place a cut on the section's real peak,
-   *  not just its start/end. */
-  peakMomentSec: number;
-  /** Timbral restlessness WITHIN this section (spectral flux). Distinct
-   *  from the song-wide spectralMotion — a static intro can precede a
-   *  restless drop; the composer must see per-section character to pick
-   *  seeds that match each specific stretch. */
-  motion: "static" | "flowing" | "restless";
-  /** Spectral width WITHIN this section (spectral bandwidth). Same
-   *  distinction: the song-wide value flattens the story. */
-  width: "narrow" | "full" | "wide";
-  /** Distinct chord changes within this section — harmonic pacing.
-   *  0 = one held chord (or no chord track); higher = faster harmonic
-   *  movement. Signals whether the world should feel sustained or busy. */
-  chordChanges: number;
 }
 
 export interface NotableMoment {
@@ -186,18 +169,6 @@ export interface MusicalSummary {
   structureBackend: string | null;
   /** True when sections came from the energy-derived fallback. */
   sectionsDerivedFromEnergy: boolean;
-  /** Overall energy trajectory across the whole song. Derived from
-   *  where the peak energy section sits and how the surrounding sections
-   *  compare — lets the composer plan the arc of the world, not just
-   *  react per-section. "cyclical" = multiple high-energy sections
-   *  separated by drops (verse/chorus feel). */
-  songArc:
-    | "steady"
-    | "building"
-    | "peak-early"
-    | "peak-middle"
-    | "peak-late"
-    | "cyclical";
   sections: SectionDigest[];
   notableMoments: NotableMoment[];
 }

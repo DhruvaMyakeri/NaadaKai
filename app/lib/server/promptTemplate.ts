@@ -159,39 +159,15 @@ Choosing seeds — tags narrow, descriptions refine:
 
 You are a composer, not an illustrator. Never render literal objects tied to any lyric words. The seed provides the WHAT and WHERE; your prompt provides the HOW IT LIVES: motion, light, palette shifts, intensity.
 
-CHARACTER-FREE, DISEMBODIED FIRST-PERSON — HARD RULE. There is NO viewer's body, NO hands, NO arms, NO feet, NO shadow of a person, NO reflection of a person, NO avatar, NO playable character, NO figure, NO person, NO creature, NO animal, NO robot, NO vehicle, NO controllable subject anywhere in the world at any point. Never write "you hold", "your hand", "reach out", "carry", "step forward", "walk into", "ride", "drive", "mount", "possess", "inhabit", "follow", or any phrasing that implies a body / hands / person / vehicle / entity that the viewpoint occupies. If the seed image shows people, treat them as environment (silhouettes moving in a crowd, distant dancers) — never as the viewer's own body and never as something the viewpoint attaches to. The viewpoint is a free, disembodied point in space that sees but never inhabits.
+Camera rule (absolute): the viewpoint is a FIXED, stationary observer that never moves through the world. Never describe camera movement, angles, framing, shots, or a viewer/observer, AND never imply the vantage point itself travelling — no "gliding through", "rushing past", "descending into", "soaring over", "the path unspools toward us", or any phrasing where the observer moves through space. The perspective is controlled separately and stays locked in place. Describe only the environment and what happens within it, as seen from one motionless point.
 
-CAMERA IS 100% USER-DRIVEN, NEVER SELF-MOVING — HARD RULE. The viewpoint is a locked, tripod-steady point that never pans, tilts, rolls, rotates, orbits, dollies, tracks, zooms, sways, bobs, glides, drifts, floats forward, descends, ascends, or moves through space on its own. Never write "camera glides", "we drift", "the view soars", "the vantage descends", "the perspective sweeps", "we push through", "we pull back", "the shot moves", or any phrasing suggesting the viewpoint itself is moving. Look/move input from the user is applied separately by the playback engine and MUST NOT be described or implied in the prompt. Describe only the environment and what happens within it, as seen from ONE motionless point.
+Motion rule: every event must describe visible, continuous motion within the seed's environment — surging matter, pulsing light, flowing weather, structural transformation, swarming density. This motion belongs to the ENVIRONMENT moving around and before a motionless observer — the world churns, the observer holds still; never phrase the motion as the viewpoint travelling through the scene. Calm passages get slow deliberate motion, never stillness. High-energy passages should feel violent, dense, and alive. Scale the intensity and speed of motion directly to the section's energy and onset density.
 
-Motion rule: every event must describe visible, continuous motion within the seed's environment — surging matter, pulsing light, flowing weather, structural transformation, swarming density. This motion belongs to the ENVIRONMENT moving around and before the motionless viewpoint — the world churns, the viewpoint holds still; never phrase the motion as the viewpoint travelling through the scene. Calm passages get slow deliberate motion, never stillness. High-energy passages should feel violent, dense, and alive. Scale the intensity and speed of motion directly to the section's energy and onset density.
-
-SYNC TO THE MUSIC — objective, checklist-driven:
-1. EVERY notable moment with strength ≥ 0.5 MUST have its own event, timestamp copied EXACTLY from the summary. Do not skip any.
-2. EVERY section MUST have at least one event landing inside it (its start, its peakMomentSec, or its end).
-3. Transition rules — apply mechanically:
-   - notable moment kind = "energy-drop" | "loudest" | "novelty-peak" → transition MUST be "cut", usually to a NEW seed.
-   - notable moment kind = "energy-jump" with strength ≥ 0.6 → "cut", usually to a new seed.
-   - Section boundary where the incoming section's dominance or motion differs from the outgoing one → "cut", new seed allowed.
-   - Everything else (mid-section evolution, smooth transitions, same-character sections) → "morph", same seed preferred.
-4. A "morph" prompt MUST describe a visible TRANSFORMATION of what is already on screen — its light, weather, density, color or structure actively changing — never a static restatement of the same scene.
-5. Aim for 6–12 events across a ~90-second clip. Fewer feels lifeless; more feels frantic. Match the density to the song's onsetRate and songArc.
-
-USE THE SECTION DIGEST FIELDS — each event's prompt MUST reflect its section's ACTUAL character. Read each section's dominance, trend, motion, width, chordChanges and let them steer the wording:
-- dominance="drum-heavy" or motion="restless" → sharp, kinetic verbs; hard edges; snapped transitions.
-- dominance="vocal-led" and motion="flowing" → sustained verbs; soft edges; slow evolution.
-- dominance="sparse" or width="narrow" → open negative space, minimal texture, held light.
-- width="wide" and onsetRate high → dense, layered, saturated maximalism.
-- trend="building" → intensity climbs across the event's prompt (its language ends more urgent than it begins).
-- trend="dropping" → intensity releases across the prompt.
-- chordChanges ≥ 4 → harmonically active; the palette / weather / density shifts noticeably.
-- chordChanges ≤ 1 → held; a single mood sustained without a color change.
-
-USE songArc TO PLAN THE OVERALL VISUAL TRAJECTORY:
-- "peak-late" → opening seed restrained enough that the drop reads as real escalation.
-- "peak-early" → opening seed is the biggest hit; later sections cool.
-- "cyclical" → returning high-energy sections should reuse an earlier seed (repetition-with-variation).
-- "building" → each event's prompt should escalate on the previous one's palette / density / motion.
-- "steady" → a single sustained world; morphs dominate, cuts are rare.
+SYNC TO THE MUSIC — this is critical:
+- The notable moments in the summary (energy jumps, drops, loudest points, novelty peaks) are the song's biggest hits. Place an event EXACTLY on each significant one, timestamp copied precisely, so the visual impact lands ON the musical impact — not before, not after.
+- A drop / hard energy jump / loudest moment MUST be a "cut" — usually to a new, more intense seed — so the visual change feels as sharp as the sonic one. This is where the world hits hardest.
+- Smooth, sustained, low-movement stretches get "morph" transitions that evolve the current seed's world gently, prompt-led, same seed where possible. Because most transitions play back as seamless morphs on the SAME image, every morph prompt must describe a clear, visible TRANSFORMATION of what is already on screen — its light, weather, density, color or structure actively changing — never a static restatement of the same scene.
+- In short: intense beats → sharp cuts (new seed allowed), on the exact beat; smooth stretches → gentle morphs (same seed preferred). The viewer should feel the music and the world change together.
 
 ${labelRegimeInstructions(summary)}
 
@@ -203,22 +179,12 @@ Each event's "prompt" must follow this three-part concrete shape, as flowing pro
 3. INTENSITY ARC — how violent or gentle the motion is across this stretch, matching the section's trend (building/steady/dropping).
 
 Placement rules — you do placement and authoring, never arithmetic:
-- Every event timestamp MUST be one of the anchor points given in the summary: a section's start, its end, its peakMomentSec, or a notableMoments[i].time. Copy the number exactly as given. Never invent evenly-spaced or arbitrary times.
+- Every event timestamp MUST be one of the anchor points given in the summary: a section start, a section end, or a notable-moment time. Copy the number exactly as given. Never invent evenly-spaced or arbitrary times.
 - The first event sits at the first section's start (the beginning of the song). Its seed is the world's OPENING IMAGE and sets the tone for everything after, so it must strongly embody the SONG IDENTITY (key mode, harmonic character, brightness) — choose it deliberately, not safely.
-- For high-energy sections (energyMean ≥ 0.6), prefer placing the event on peakMomentSec — the loudest single frame in the section — instead of its start, so the visual hit lands with the sonic hit.
-- Cover every notableMoment with strength ≥ 0.5 with its own event — do not skip the drops.
+- Cover every significant notable moment with its own event — do not skip the drops.
 - Every section of the song gets at least one event (a section inherits its seed from the previous event only if you deliberately continue it with a morph).
 - No single environment should feel like it holds unchanged for a long stretch — if a section runs long, evolve it via a morph partway rather than letting it sit static.
 - Keep events at least ~3 seconds apart (avoid frantic strobing), but do NOT artificially minimize the number of events — favor a world that keeps moving and stays in sync with the song over a sparse one.
-
-BEFORE SUBMITTING — verify all of these are true:
-✓ Between 6 and 12 events (adjusted for songArc/duration).
-✓ Every section has at least one event inside it.
-✓ Every notableMoment with strength ≥ 0.5 has an event at its exact timestamp.
-✓ Every "cut" is on a notable moment, a strong section boundary, or a peakMomentSec — not an arbitrary time.
-✓ Every prompt names or evokes at least one concrete detail from its chosen seed's description AND at least one detail rooted in its section's digest (dominance / trend / motion / width / chordChanges).
-✓ No prompt uses viewer-body language (hand / arm / body / avatar / character / vehicle) or camera-motion language (glide / drift / soar / descend / push through / pull back).
-✓ Diverse seed selection: your chosen seeds match THIS song's identity (keyMode / harmonicCharacter / brightnessLabel / harmonicPercussiveBalance), not the generic-safe defaults.
 
 Respond with ONLY a JSON object, no prose around it:
 {
