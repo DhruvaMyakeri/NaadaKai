@@ -251,12 +251,19 @@ function digestSections(
   sections: ExtractorSection[],
   features: FeatureTable,
   frameRate: number,
+  chords: ExtractorChord[] | undefined,
 ): SectionDigest[] {
   const rms = features.columns.get("full_mix_rms") ?? new Float64Array(0);
   const centroid = features.columns.get("full_mix_spectral_centroid") ?? new Float64Array(0);
   const onset = features.columns.get("full_mix_onset_envelope") ?? new Float64Array(0);
   const drums = features.columns.get("drums_rms") ?? new Float64Array(0);
   const bass = features.columns.get("bass_rms") ?? new Float64Array(0);
+  // Per-section spectral character: same signals as the song-wide
+  // derivations, but computed over each section's window instead of the
+  // whole song — an "atmospheric intro / restless drop" story that the
+  // song-wide averages collapse away.
+  const flux = features.columns.get("full_mix_spectral_flux") ?? new Float64Array(0);
+  const bandwidth = features.columns.get("full_mix_spectral_bandwidth") ?? new Float64Array(0);
   // Tonal stems carry no rms column; vocal presence is inferred from
   // spectral flatness (voiced content → low flatness). See dominance.
   const vocalFlatness = features.columns.get("vocals_spectral_flatness") ?? new Float64Array(0);
@@ -319,6 +326,54 @@ function digestSections(
       else if (vocalPresent) dominance = "vocal-led";
     }
 
+    // Loudest single frame within this section — the composer places
+    // its heaviest cut on this timestamp rather than the section's
+    // start/end, when the two differ meaningfully.
+    let peakIdx = from;
+    for (let i = from + 1; i < to && i < rms.length; i++) {
+      if (rms[i] > rms[peakIdx]) peakIdx = i;
+    }
+    const peakMomentSec = round(peakIdx / frameRate, 2);
+
+    // Per-section spectral character (same thresholds as the song-wide
+    // derivations, applied to just this window). "flowing" for absent
+    // columns → neutral.
+    const secFluxMean =
+      flux.length > 0 ? mean(flux, Math.min(from, flux.length), Math.min(to, flux.length)) : 0.1;
+    const motion: SectionDigest["motion"] =
+      flux.length === 0
+        ? "flowing"
+        : secFluxMean < 0.06
+          ? "static"
+          : secFluxMean < 0.13
+            ? "flowing"
+            : "restless";
+    const secBwMean =
+      bandwidth.length > 0
+        ? mean(bandwidth, Math.min(from, bandwidth.length), Math.min(to, bandwidth.length))
+        : 3000;
+    const width: SectionDigest["width"] =
+      bandwidth.length === 0
+        ? "full"
+        : secBwMean < 2600
+          ? "narrow"
+          : secBwMean < 3400
+            ? "full"
+            : "wide";
+
+    // Distinct chord changes overlapping this section's window. A section
+    // with 0-1 changes feels held; ~4+ moves feel harmonically active.
+    let chordChanges = 0;
+    if (chords && chords.length > 0) {
+      let lastLabel: string | null = null;
+      for (const c of chords) {
+        if (c.end <= sec.start || c.start >= sec.end) continue;
+        if (c.chord_label === "N" || !c.chord_label) continue;
+        if (c.chord_label !== lastLabel) chordChanges++;
+        lastLabel = c.chord_label;
+      }
+    }
+
     return {
       start: round(sec.start, 2),
       end: round(sec.end, 2),
@@ -329,8 +384,69 @@ function digestSections(
       onsetRate: round(onsetRate, 1),
       trend,
       dominance,
+      peakMomentSec,
+      motion,
+      width,
+      chordChanges,
     };
   });
+}
+
+/**
+ * Overall song arc from the section energy trajectory.
+ *
+ * "steady"       — no section clearly stands out; flat energy.
+ * "building"     — energy monotonically climbs across sections.
+ * "peak-early"   — max energy in the first third, then falls.
+ * "peak-middle"  — max energy near the middle.
+ * "peak-late"    — max energy in the last third; classic buildup-drop shape.
+ * "cyclical"     — 2+ high-energy sections separated by low ones (verse/chorus feel).
+ *
+ * Composer reads this to plan the WORLD's arc: "peak-late" means the
+ * opening seed should be restrained enough that the drop reads as a real
+ * escalation, not a plateau. "cyclical" means chorus-like sections should
+ * reuse a seed to build repetition-with-variation.
+ */
+function deriveSongArc(sections: SectionDigest[]): MusicalSummary["songArc"] {
+  if (sections.length < 2) return "steady";
+  const energies = sections.map((s) => s.energyMean);
+  const maxE = Math.max(...energies);
+  const minE = Math.min(...energies);
+  if (maxE - minE < 0.15) return "steady";
+
+  // Count "peaks": local maxima above 75% of the range span.
+  const highThresh = minE + (maxE - minE) * 0.75;
+  const highSections = energies
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e >= highThresh);
+  // Cyclical requires 2+ high sections separated by a below-mid section
+  // between them.
+  const midThresh = minE + (maxE - minE) * 0.45;
+  let separatedHighs = 0;
+  for (let i = 0; i < highSections.length - 1; i++) {
+    const from = highSections[i].i;
+    const to = highSections[i + 1].i;
+    if (to - from >= 2) {
+      const between = energies.slice(from + 1, to);
+      if (between.some((e) => e < midThresh)) separatedHighs++;
+    }
+  }
+  if (separatedHighs >= 1 && highSections.length >= 2) return "cyclical";
+
+  // Monotonic build: each section's energy exceeds the previous by a small
+  // margin most of the time.
+  let ups = 0;
+  for (let i = 1; i < energies.length; i++) {
+    if (energies[i] > energies[i - 1] + 0.05) ups++;
+  }
+  if (ups >= energies.length - 2) return "building";
+
+  // Position of the peak section decides early/middle/late.
+  const peakIdx = energies.indexOf(maxE);
+  const third = sections.length / 3;
+  if (peakIdx < third) return "peak-early";
+  if (peakIdx >= 2 * third) return "peak-late";
+  return "peak-middle";
 }
 
 // ── label regime (fact #3) ──
@@ -492,6 +608,9 @@ export function buildMusicalSummary(
     .filter((s) => s.start < durationSec)
     .map((s) => (s.end > durationSec ? { ...s, end: durationSec } : s));
 
+  // Digest sections up-front so songArc can read the normalized energies.
+  const sectionDigests = digestSections(sections, features, frameRate, meta.chords);
+
   return {
     songId: meta.song_id,
     durationSec: round(durationSec, 2),
@@ -519,7 +638,9 @@ export function buildMusicalSummary(
     labelRegime: regime,
     structureBackend: meta.model_versions.structure ?? null,
     sectionsDerivedFromEnergy: derived,
-    sections: digestSections(sections, features, frameRate),
+    // Digest sections first so songArc can read their normalized energies.
+    sections: sectionDigests,
+    songArc: deriveSongArc(sectionDigests),
     notableMoments: findNotableMoments(features, frameRate),
   };
 }
