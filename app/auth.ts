@@ -22,6 +22,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         Google({
           clientId: process.env.AUTH_GOOGLE_ID!,
           clientSecret: process.env.AUTH_GOOGLE_SECRET!,
+          // Force Google's account-chooser on every sign-in. Without
+          // `prompt: "select_account"`, Google silently reuses the last
+          // signed-in email — so once a user has authenticated once,
+          // hitting "sign in" again just re-authenticates the same
+          // account with no way to switch. This makes sign-in ALWAYS
+          // present the picker.
+          authorization: { params: { prompt: "select_account" } },
         }),
       ]
     : [],
